@@ -1,8 +1,12 @@
 #!/bin/bash
 
+GATEWAY=
+TARGET_IP=
+TARGET_HOST=tablet_hostname___or_use_ip_above_which_overrides_this
+INTERFACE=
+
 LOG_FILE="/var/log/switch_listener.log"
 PROGRAM_LOG_FILE="/var/log/disable-tablet.log"
-PROGRAM="/usr/sbin/arpspoof -i eth0 -t 192.168.1.223 -r 192.168.1.204"
 GPIO_PIN=2
 PID_FILE="/var/run/disable-tablet.pid"
 SLEEP_INTERVAL=1
@@ -15,8 +19,71 @@ log_action() {
     echo "$(date +"%Y-%m-%d %H:%M:%S") - $1" >> "$LOG_FILE"
 }
 
+
+get_switch_cmd() {
+                                             # interface  target  gateway
+    local switch_cmd_template="/usr/sbin/arpspoof -i %s -t %s -r %s"
+    local switch_cmd=
+    local iface="$INTERFACE"
+    local gw="$GATEWAY"
+    local targ_ip="$TARGET_IP"
+
+    if [[ -z "$iface" ]]; then
+        log_action "Looking up interface"
+        iface=$(get_default_interface)
+        log_action "Using interfae '$iface'"
+    fi
+
+    if [[ -z "$gw" ]]; then
+        log_action "Looking up gateway"
+        gw=$(get_network_gateway)
+        log_action "Using gateway '$gw'"
+    fi
+        
+    if [[ -z "$targ_ip" ]]; then
+        if [[ -z "$TARGET_HOST" ]]; then
+            log_action "Error: target not specifed."
+            return 1;
+        else
+            log_action "Looking up IP for $TARGET_HOST"
+            targ_ip=$(get_ip_by_hostname "$TARGET_HOST")
+            if [[ -z "$targ_ip" ]]; then
+                log_action "Failed to lookup IP for $TARGET_HOST"
+                return 2
+            else
+                log_action "IP for target ($TARGET_HOST) is $targ_ip"
+            fi
+        fi
+    fi
+    
+    
+    switch_cmd=$(printf "$switch_cmd_template" "$iface" "$targ_ip" "$gw")
+    
+    log_action "Using switch cmd: '$switch_cmd'"
+    echo -n "$switch_cmd"
+}
+
+
+
+get_ip_by_hostname() {
+  [[ -z "$1" ]] && return 1
+  host "$1" |cut -d' ' -f4
+}
+
+
+get_default_interface() {
+    read -r j j gw j dev j ip j < <(ip route list |grep "^default via ")
+    echo "$dev"
+}
+
+get_network_gateway() {
+    read -r j j gw j dev j ip j < <(ip route list |grep "^default via ")
+    echo "$gw"
+}
+
 # Function to start the external program
 start_program() {
+
     if [ -f "$PID_FILE" ]; then
         PID=$(cat "$PID_FILE")
         if kill -0 "$PID" 2> /dev/null; then
@@ -33,7 +100,7 @@ start_program() {
     fi
 
     log_action "Starting the program."
-    $PROGRAM >> "$PROGRAM_LOG_FILE" 2>&1 &
+    $(get_switch_cmd) >> "$PROGRAM_LOG_FILE" 2>&1 &
     PID=$!
     echo $PID > "$PID_FILE"
     NO_PID_FILE_LOGGED=false
@@ -91,6 +158,8 @@ read_gpio() {
 cleanup_gpio() {
     echo "$GPIO_PIN" > /sys/class/gpio/unexport
 }
+
+
 
 # Trap for clean exit
 trap 'CLEAN_UP=true; stop_program; cleanup_gpio; log_action "Exiting."; exit 0' SIGTERM SIGINT
