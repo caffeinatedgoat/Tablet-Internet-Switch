@@ -29,6 +29,13 @@ Physical switch to turn off and on the internet on the kids' tablet (oh no the I
 2. The gateway need to be updated, as well as
 3. The GPIO pin the switch is conneted to, config near the top of the script:
    ```bash
-    PROGRAM="/usr/sbin/arpspoof -i eth0 -t TARGET_IP -r GATEWAY_IP"
+    TARGET_IP=192.168.0.65 # IP of the tablet
+    #...
     GPIO_PIN=2
     ```
+
+For example, I use GPIO 2 (pin 3), and ground (pin 6) for the switch:
+
+![image](https://github.com/caffeinatedgoat/Tablet-Internet-Switch/assets/41058709/f24e2b12-ab17-4e35-a45f-5f1f50ad912f)
+
+
